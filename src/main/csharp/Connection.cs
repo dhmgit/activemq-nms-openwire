@@ -971,6 +971,7 @@ namespace Apache.NMS.ActiveMQ
                         {
                             if(closed.Value || closing.Value)
                             {
+                                Tracer.Debug("Connection.CheckConnected: breaking loop because closed or closing is true.");
                                 break;
                             }
                             else if(!connected.Value)
@@ -982,7 +983,12 @@ namespace Apache.NMS.ActiveMQ
 
                                 try
                                 {
-                                    if(null != transport)
+                                    if (null == transport)
+                                    {
+                                        Tracer.Error("Connection.CheckConnected: breaking loop because transport is null.");
+                                        break;
+                                    }
+                                    else
                                     {
                                         // Make sure the transport is started.
                                         if(!this.transport.IsStarted)
@@ -998,8 +1004,8 @@ namespace Apache.NMS.ActiveMQ
                                             if(this.watchTopicAdviosires)
                                             {
                                                 ConsumerId id = new ConsumerId(
-                                                    new SessionId(info.ConnectionId, -1),
-                                                    Interlocked.Increment(ref this.consumerIdCounter));
+                                                                               new SessionId(info.ConnectionId, -1),
+                                                                               Interlocked.Increment(ref this.consumerIdCounter));
                                                 this.advisoryConsumer = new AdvisoryConsumer(this, id);
                                             }
                                         }
@@ -1029,17 +1035,23 @@ namespace Apache.NMS.ActiveMQ
                                                 SetTransport(newTransport);
                                                 throw exception;
                                             }
+                                            else
+                                            {
+                                                throw exception;
+                                            }
                                         }
                                     }
                                 }
-                                catch(BrokerException)
+                                catch(BrokerException ex)
                                 {
                                     // We Swallow the generic version and throw ConnectionClosedException
+                                    Tracer.Error("Connection.CheckConnected: breaking loop on exception: " + ex);
+                                    break;
                                 }
-                                catch(NMSException)
-                                {
-                                    throw;
-                                }
+                                //catch(NMSException)
+                                //{
+                                //    throw;
+                                //}
                             }
                         }
                         finally
@@ -1056,7 +1068,10 @@ namespace Apache.NMS.ActiveMQ
 
                     // Back off from being overly aggressive.  Having too many threads
                     // aggressively trying to connect to a down broker pegs the CPU.
-                    Thread.Sleep(5 * (waitCount++));
+                    var sleepTimeout = waitCount++ * 5;
+                    if (Tracer.IsDebugEnabled)
+                        Tracer.DebugFormat("Connection.CheckConnected: Sleeping {0}ms.  waitCount={1}", sleepTimeout, waitCount);
+                    Thread.Sleep(sleepTimeout);
                 }
 
                 if(!connected.Value)
@@ -1171,7 +1186,7 @@ namespace Apache.NMS.ActiveMQ
                 }
             }
 
-            Tracer.DebugFormat("Connection[{0}]: No such consumer active: {1}", this.ConnectionId, dispatch.ConsumerId);
+            Tracer.ErrorFormat("Connection[{0}]: No such consumer active: {1}", this.ConnectionId, dispatch.ConsumerId);
         }
 
         protected void OnKeepAliveCommand(ITransport commandTransport, KeepAliveInfo info)
